@@ -4,7 +4,7 @@ const { chromium } = require("playwright");
 
 const URL = process.env.LBV_URL || "https://www.lbv-termine.de/frontend/index.php?behoerdenID=56";
 const CHECK_INTERVAL_MINUTES = Number(process.env.CHECK_INTERVAL_MINUTES || 10);
-const NO_MATCH_NOTIFY_HOUR = Number(process.env.NO_MATCH_NOTIFY_HOUR || 23);
+const NO_MATCH_NOTIFY_HOUR = Math.max(Number(process.env.NO_MATCH_NOTIFY_HOUR || 23), 23);
 const FROM = parseDate(process.env.FROM_DATE || "28.04.2026");
 const TO = parseDate(process.env.TO_DATE || "25.05.2026");
 const FIRST_NAME = process.env.APPOINTMENT_FIRST_NAME || "Peter";
@@ -100,16 +100,24 @@ async function sendMessage(text) {
 
 async function notifyNoMatchOncePerDay(statusText) {
   const key = todayKey();
+  const currentHour = berlinHour();
 
   if (
     lastNoMatchNotificationDay === key ||
     lastMatchingAppointmentDay === key ||
-    berlinHour() < NO_MATCH_NOTIFY_HOUR
+    currentHour < NO_MATCH_NOTIFY_HOUR
   ) {
+    log("Keine Kein-Treffer-Nachricht gesendet", {
+      currentHour,
+      noMatchNotifyHour: NO_MATCH_NOTIFY_HOUR,
+      alreadySentToday: lastNoMatchNotificationDay === key,
+      matchingAppointmentSeenToday: lastMatchingAppointmentDay === key
+    });
     return;
   }
 
   lastNoMatchNotificationDay = key;
+  log("Sende Kein-Treffer-Nachricht", { currentHour, noMatchNotifyHour: NO_MATCH_NOTIFY_HOUR });
   await sendMessage(
     `Heute wurde leider kein passender LBV-Termin gefunden. ${statusText} Gewuenschter Zeitraum: ${formatDate(FROM)} bis ${formatDate(TO)}.`
   );
@@ -153,12 +161,9 @@ async function clickContinueToLocationSelection(page) {
   await button.waitFor({ state: "visible", timeout: 10000 });
   await button.scrollIntoViewIfNeeded();
 
-  const navigation = page.waitForURL(/standortauswahl\.php/i, { timeout: 15000 }).catch(() => null);
   await button.click({ force: true });
   log("Weiter zur Standortauswahl geklickt");
-  await navigation;
-
-  await page.waitForTimeout(2000);
+  await waitAfterLocationClick(page);
 
   const sample = await page
     .locator("body")
@@ -171,6 +176,41 @@ async function clickContinueToLocationSelection(page) {
     aufStandortseite: page.url().includes("standortauswahl.php"),
     sample
   });
+}
+
+async function waitAfterLocationClick(page) {
+  const startedAt = Date.now();
+  let lastLoggedSecond = 0;
+
+  while (Date.now() - startedAt < 30000) {
+    const bodyText = await page.locator("body").innerText({ timeout: 5000 }).catch(() => "");
+    const onLocationPage = page.url().includes("standortauswahl.php");
+    const hasAppointmentText = /termine verf\u00fcgbar ab/i.test(bodyText);
+
+    if (onLocationPage || hasAppointmentText) {
+      log("Standortauswahl nach Klick erkannt", {
+        url: page.url(),
+        seconds: Math.round((Date.now() - startedAt) / 1000),
+        hasAppointmentText
+      });
+      return;
+    }
+
+    const elapsedSeconds = Math.round((Date.now() - startedAt) / 1000);
+
+    if (elapsedSeconds - lastLoggedSecond >= 10) {
+      lastLoggedSecond = elapsedSeconds;
+      log("Warte nach Standortauswahl-Klick", {
+        url: page.url(),
+        seconds: elapsedSeconds,
+        sample: bodyText.slice(0, 300).replace(/\s+/g, " ")
+      });
+    }
+
+    await page.waitForTimeout(1000);
+  }
+
+  log("Standortauswahl nach Klick nicht erreicht", { url: page.url() });
 }
 
 async function waitForPowerCaptcha(page) {
