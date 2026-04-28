@@ -4,7 +4,7 @@ const { chromium } = require("playwright");
 
 const URL = process.env.LBV_URL || "https://www.lbv-termine.de/frontend/index.php?behoerdenID=56";
 const CHECK_INTERVAL_MINUTES = Number(process.env.CHECK_INTERVAL_MINUTES || 10);
-const NO_MATCH_NOTIFY_HOUR = Number(process.env.NO_MATCH_NOTIFY_HOUR || 20);
+const NO_MATCH_NOTIFY_HOUR = Number(process.env.NO_MATCH_NOTIFY_HOUR || 23);
 const FROM = parseDate(process.env.FROM_DATE || "28.04.2026");
 const TO = parseDate(process.env.TO_DATE || "25.05.2026");
 const FIRST_NAME = process.env.APPOINTMENT_FIRST_NAME || "Peter";
