@@ -1,9 +1,10 @@
-const { chromium } = require("playwright");
+const { chromium } = require("playwright-core");
 
+// ENV Variablen
 const PUSHOVER_USER = process.env.PUSHOVER_USER;
 const PUSHOVER_TOKEN = process.env.PUSHOVER_TOKEN;
 
-const TARGET_DATE = new Date("2026-05-15"); // alles davor ist gut
+const TARGET_DATE = new Date("2026-05-15");
 
 async function sendPush(message) {
   try {
@@ -15,8 +16,7 @@ async function sendPush(message) {
       body: new URLSearchParams({
         token: PUSHOVER_TOKEN,
         user: PUSHOVER_USER,
-        title: "LBV Termin",
-        message: message
+        message
       })
     });
     console.log("Push gesendet:", message);
@@ -37,63 +37,59 @@ async function check() {
 
   try {
     await page.goto("https://lbv-termine.de/frontend/index.php", {
-      waitUntil: "domcontentloaded",
-      timeout: 60000
+      waitUntil: "domcontentloaded"
     });
 
-    // Datenschutz akzeptieren
-    await page.waitForSelector('input[type="checkbox"]', { timeout: 10000 });
-    await page.click('input[type="checkbox"]');
-    await page.click('text=weiter');
+    // Flow durchklicken
+    await page.locator('button:has-text("Verstanden")')
+      .click({ timeout: 3000 })
+      .catch(() => {});
 
-    // Formular dummy ausfüllen
-    await page.fill('input[placeholder="Vorname"]', "Test");
-    await page.fill('input[placeholder="Nachname"]', "Test");
-    await page.fill('input[placeholder="E-Mail"]', "test@test.de");
-    await page.click('text=weiter zur Standortauswahl');
-
-    // Führerschein auswählen
     await page.click('text=Führerschein');
-    await page.waitForTimeout(1000);
-
     await page.click('text=Neuerteilung nach Entzug');
     await page.click('text=weiter zur Terminvereinbarung');
 
-    await page.waitForTimeout(3000);
+    await page.check('input[type="checkbox"]');
+    await page.click('text=weiter');
 
-    const content = await page.content();
+    await page.fill('input[name="vorname"]', "Max");
+    await page.fill('input[name="nachname"]', "Mustermann");
+    await page.fill('input[name="email"]', "test@test.de");
 
-    // Datum extrahieren
-    const match = content.match(/(\d{2}\.\d{2}\.\d{4})/);
+    await page.click('text=weiter zur Standortauswahl');
 
-    if (match) {
-      const foundDateStr = match[1];
-      console.log("Gefunden:", foundDateStr);
+    await page.waitForSelector("text=Termine verfügbar ab", { timeout: 10000 });
 
-      const [day, month, year] = foundDateStr.split(".");
-      const foundDate = new Date(`${year}-${month}-${day}`);
+    const text = await page.textContent("body");
+    const match = text.match(/(\d{2}\.\d{2}\.\d{4})/);
 
-      if (foundDate < TARGET_DATE) {
-        await sendPush(`🔥 Früher Termin gefunden: ${foundDateStr}`);
-      }
-    } else {
+    if (!match) {
       console.log("Kein Datum gefunden");
+      return;
+    }
+
+    const [d, m, y] = match[1].split(".");
+    const foundDate = new Date(`${y}-${m}-${d}`);
+
+    console.log("Gefunden:", match[1]);
+
+    if (foundDate < TARGET_DATE) {
+      await sendPush(`🔥 Früher Termin: ${match[1]}`);
     }
 
   } catch (err) {
-    console.log("Fehler beim Check:", err.message);
+    console.log("Fehler:", err.message);
   }
 
   await browser.close();
 }
 
-// 🔁 Endlosschleife
+// Endlosschleife
 async function run() {
   while (true) {
     await check();
-
     console.log("Warte 10 Minuten...");
-    await new Promise(r => setTimeout(r, 10 * 60 * 1000));
+    await new Promise(r => setTimeout(r, 600000));
   }
 }
 
