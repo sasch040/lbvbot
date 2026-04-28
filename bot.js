@@ -50,13 +50,14 @@ function todayKey() {
 }
 
 function berlinHour() {
-  return Number(
-    new Intl.DateTimeFormat("de-DE", {
-      timeZone: "Europe/Berlin",
-      hour: "2-digit",
-      hour12: false
-    }).format(new Date())
-  );
+  const hourPart = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Berlin",
+    hour: "2-digit",
+    hour12: false
+  }).formatToParts(new Date()).find((part) => part.type === "hour");
+  const hour = Number(hourPart ? hourPart.value : NaN);
+
+  return Number.isFinite(hour) ? hour : null;
 }
 
 async function sendMessage(text) {
@@ -103,6 +104,7 @@ async function notifyNoMatchOncePerDay(statusText) {
   const currentHour = berlinHour();
 
   if (
+    currentHour === null ||
     lastNoMatchNotificationDay === key ||
     lastMatchingAppointmentDay === key ||
     currentHour < NO_MATCH_NOTIFY_HOUR
