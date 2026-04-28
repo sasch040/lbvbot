@@ -3,7 +3,7 @@ FROM node:20
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm install && npx playwright install --with-deps
+RUN echo "force-clean-build-v12" && npm install && npx playwright install --with-deps
 
 COPY . .
 
