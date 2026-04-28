@@ -146,68 +146,15 @@ async function clickButtonByName(page, namePattern, description) {
 }
 
 async function clickContinueToLocationSelection(page) {
-  const formState = await page.evaluate(() => ({
-    url: window.location.href,
-    inputs: [...document.querySelectorAll("input")].map((input) => ({
-      id: input.id,
-      name: input.name,
-      type: input.type,
-      value: input.type === "password" ? "" : input.value,
-      checked: input.checked,
-      required: input.required,
-      visible: Boolean(input.offsetParent)
-    })).filter((input) =>
-      input.required ||
-      ["vorname", "nachname", "email"].includes(input.name) ||
-      ["vorname", "nachname", "email"].includes(input.id)
-    ),
-    buttons: [...document.querySelectorAll("input[type='submit'], button")].map((button) => ({
-      tag: button.tagName,
-      type: button.type,
-      value: button.value || button.innerText || "",
-      disabled: button.disabled,
-      visible: Boolean(button.offsetParent)
-    }))
-  }));
+  const button = page.locator("input[type='submit'][value='weiter zur Standortauswahl']").first();
 
-  log("Kontaktdaten-Seite vor Standortauswahl-Submit", formState);
+  await button.waitFor({ state: "visible", timeout: 10000 });
+  await button.scrollIntoViewIfNeeded();
 
-  const clicked = await page.evaluate(() => {
-    const buttons = [...document.querySelectorAll("input[type='submit'], button")];
-    const button = buttons.find((item) => {
-      const label = item.value || item.innerText || "";
-      return /weiter zur standortauswahl/i.test(label);
-    });
-
-    if (!button) {
-      return false;
-    }
-
-    button.scrollIntoView({ block: "center" });
-
-    if (button.form && typeof button.form.requestSubmit === "function") {
-      button.form.requestSubmit(button);
-    } else {
-      button.click();
-    }
-
-    return true;
-  });
-
-  if (!clicked) {
-    throw new Error("Button nicht gefunden: Weiter zur Standortauswahl");
-  }
-
+  const navigation = page.waitForURL(/standortauswahl\.php/i, { timeout: 15000 }).catch(() => null);
+  await button.click({ force: true });
   log("Weiter zur Standortauswahl geklickt");
-
-  await page
-    .waitForFunction(
-      () =>
-        window.location.href.includes("standortauswahl.php") ||
-        /termine verf\u00fcgbar ab|standortauswahl und fr\u00fchestm\u00f6glicher termin/i.test(document.body.innerText),
-      { timeout: 10000 }
-    )
-    .catch(() => {});
+  await navigation;
 
   await page.waitForTimeout(2000);
 
