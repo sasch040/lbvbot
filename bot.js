@@ -145,6 +145,37 @@ async function clickButtonByName(page, namePattern, description) {
   throw new Error(`Button/Link nicht gefunden: ${description}`);
 }
 
+async function waitForText(page, pattern, description, timeout = 15000) {
+  await page.getByText(pattern).first().waitFor({ state: "visible", timeout });
+  log(description);
+}
+
+async function clickContinueToLocationSelection(page) {
+  const candidates = [
+    page.locator("input[type='submit'][value*='Standortauswahl']").first(),
+    page.getByRole("button", { name: /weiter zur standortauswahl/i }).first(),
+    page.locator("button").filter({ hasText: /weiter zur standortauswahl/i }).first()
+  ];
+
+  for (const button of candidates) {
+    if (await button.isVisible().catch(() => false)) {
+      await button.click();
+      log("Weiter zur Standortauswahl geklickt");
+      await page.waitForLoadState("domcontentloaded").catch(() => {});
+      await page.waitForTimeout(3000);
+      await waitForText(
+        page,
+        /standortauswahl und fr\u00fchestm\u00f6glicher termin|termine verf\u00fcgbar ab/i,
+        "Standortauswahl mit Termintext sichtbar",
+        20000
+      );
+      return;
+    }
+  }
+
+  throw new Error("Button nicht gefunden: Weiter zur Standortauswahl");
+}
+
 async function clickButtonInSection(page, sectionPattern, buttonPattern, description) {
   const labels = page.getByText(sectionPattern);
   const count = await labels.count();
@@ -231,7 +262,7 @@ async function fillPersonalDataAndContinue(page) {
 
   log("Kontaktdaten eingetragen", { firstName: FIRST_NAME, lastName: LAST_NAME, email: EMAIL });
 
-  await clickButtonByName(page, /weiter zur standortauswahl/i, "Weiter zur Standortauswahl");
+  await clickContinueToLocationSelection(page);
 }
 
 async function openAppointmentDatePage(page) {
@@ -275,27 +306,29 @@ async function check() {
     intervalMinutes: CHECK_INTERVAL_MINUTES
   });
 
-  const browser = await chromium.launch({
-    args: ["--no-sandbox", "--disable-dev-shm-usage"]
-  });
-
-  const page = await browser.newPage({
-    locale: "de-DE",
-    viewport: { width: 1366, height: 900 }
-  });
+  let browser;
+  let page;
 
   try {
+    browser = await chromium.launch({
+      args: ["--no-sandbox", "--disable-dev-shm-usage"]
+    });
+
+    page = await browser.newPage({
+      locale: "de-DE",
+      viewport: { width: 1366, height: 900 }
+    });
+
     await openAppointmentDatePage(page);
 
     const content = await page.locator("body").innerText({ timeout: 15000 });
     const dateText = extractEarliestAppointmentDate(content);
 
     if (!dateText) {
-      log("Standortauswahl erreicht, aber kein Termin-Datum im erwarteten Format gefunden", {
+      log("Kein Termin-Datum ausgelesen, deshalb wird keine Kein-Treffer-Nachricht gesendet", {
         url: page.url(),
         sample: content.slice(0, 700).replace(/\s+/g, " ")
       });
-      await notifyNoMatchOncePerDay("Auf der Standortauswahl wurde kein Termin-Datum im erwarteten Format erkannt.");
       return;
     }
 
@@ -326,9 +359,11 @@ async function check() {
     });
     await notifyNoMatchOncePerDay(`Ausgelesenes Datum: ${dateText}.`);
   } catch (error) {
-    log("Fehler bei Terminpruefung", { message: error.message, url: page.url() });
+    log("Fehler bei Terminpruefung", { message: error.message, url: page ? page.url() : null });
   } finally {
-    await browser.close();
+    if (browser) {
+      await browser.close();
+    }
     log("Terminpruefung beendet");
   }
 }
@@ -342,7 +377,16 @@ async function main() {
   });
 
   await check();
-  setInterval(check, CHECK_INTERVAL_MINUTES * 60 * 1000);
+  log("Naechste Terminpruefung geplant", { inMinutes: CHECK_INTERVAL_MINUTES });
+  setInterval(() => {
+    check()
+      .catch((error) => {
+        log("Unerwarteter Fehler ausserhalb der Terminpruefung", { message: error.message });
+      })
+      .finally(() => {
+        log("Naechste Terminpruefung geplant", { inMinutes: CHECK_INTERVAL_MINUTES });
+      });
+  }, CHECK_INTERVAL_MINUTES * 60 * 1000);
 }
 
 main().catch((error) => {
