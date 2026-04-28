@@ -1,9 +1,9 @@
-FROM mcr.microsoft.com/playwright:v1.59.1-jammy
+FROM node:20
 
 WORKDIR /app
 
 COPY package*.json ./
-RUN echo "force rebuild v4" && npm install
+RUN npm install && npx playwright install --with-deps
 
 COPY . .
 
