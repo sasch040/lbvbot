@@ -1,10 +1,13 @@
 const { chromium } = require("playwright-core");
 
-// ENV Variablen
 const PUSHOVER_USER = process.env.PUSHOVER_USER;
 const PUSHOVER_TOKEN = process.env.PUSHOVER_TOKEN;
 
+// 🔥 Ziel (echter Trigger)
 const TARGET_DATE = new Date("2026-05-15");
+
+// 🧪 Debug: alles bis Ende Juni melden
+const DEBUG_DATE = new Date("2026-06-30");
 
 async function sendPush(message) {
   try {
@@ -30,6 +33,7 @@ async function check() {
 
   const browser = await chromium.launch({
     headless: true,
+    executablePath: "/ms-playwright/chromium-1217/chrome-linux/chrome",
     args: ["--no-sandbox", "--disable-setuid-sandbox"]
   });
 
@@ -37,14 +41,16 @@ async function check() {
 
   try {
     await page.goto("https://lbv-termine.de/frontend/index.php", {
-      waitUntil: "domcontentloaded"
+      waitUntil: "domcontentloaded",
+      timeout: 60000
     });
 
-    // Flow durchklicken
+    // Popup schließen
     await page.locator('button:has-text("Verstanden")')
       .click({ timeout: 3000 })
       .catch(() => {});
 
+    // Flow
     await page.click('text=Führerschein');
     await page.click('text=Neuerteilung nach Entzug');
     await page.click('text=weiter zur Terminvereinbarung');
@@ -73,8 +79,14 @@ async function check() {
 
     console.log("Gefunden:", match[1]);
 
+    // 🔥 DEBUG: alles bis Ende Juni melden
+    if (foundDate <= DEBUG_DATE) {
+      await sendPush(`🧪 DEBUG Termin erkannt: ${match[1]}`);
+    }
+
+    // 🎯 ECHTER TRIGGER
     if (foundDate < TARGET_DATE) {
-      await sendPush(`🔥 Früher Termin: ${match[1]}`);
+      await sendPush(`🔥 TOP Termin: ${match[1]}`);
     }
 
   } catch (err) {
@@ -84,7 +96,7 @@ async function check() {
   await browser.close();
 }
 
-// Endlosschleife
+// 🔁 Loop
 async function run() {
   while (true) {
     await check();
