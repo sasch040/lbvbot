@@ -146,7 +146,11 @@ async function clickButtonByName(page, namePattern, description) {
 }
 
 async function waitForText(page, pattern, description, timeout = 15000) {
-  await page.getByText(pattern).first().waitFor({ state: "visible", timeout });
+  await page.waitForFunction(
+    (source) => new RegExp(source, "i").test(document.body.innerText),
+    pattern.source,
+    { timeout }
+  );
   log(description);
 }
 
