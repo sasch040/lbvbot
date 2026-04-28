@@ -225,9 +225,9 @@ async function acceptPrivacyAndContinue(page) {
 }
 
 async function fillPersonalDataAndContinue(page) {
-  await page.getByPlaceholder(/vorname/i).fill(FIRST_NAME);
-  await page.getByPlaceholder(/nachname/i).fill(LAST_NAME);
-  await page.getByPlaceholder(/e-?mail/i).fill(EMAIL);
+  await page.locator("input[name='vorname']").fill(FIRST_NAME);
+  await page.locator("input[name='nachname']").fill(LAST_NAME);
+  await page.locator("input[name='email']").fill(EMAIL);
   log("Kontaktdaten eingetragen", { firstName: FIRST_NAME, lastName: LAST_NAME, email: EMAIL });
 
   await clickButtonByName(page, /weiter zur standortauswahl/i, "Weiter zur Standortauswahl");
