@@ -146,6 +146,8 @@ async function clickButtonByName(page, namePattern, description) {
 }
 
 async function clickContinueToLocationSelection(page) {
+  await waitForPowerCaptcha(page);
+
   const button = page.locator("input[type='submit'][value='weiter zur Standortauswahl']").first();
 
   await button.waitFor({ state: "visible", timeout: 10000 });
@@ -169,6 +171,41 @@ async function clickContinueToLocationSelection(page) {
     aufStandortseite: page.url().includes("standortauswahl.php"),
     sample
   });
+}
+
+async function waitForPowerCaptcha(page) {
+  const captchaExists = await page.locator("input[name='pc-success']").count();
+
+  if (!captchaExists) {
+    log("Power-Captcha nicht vorhanden");
+    return;
+  }
+
+  log("Warte auf Power-Captcha");
+
+  const solved = await page
+    .waitForFunction(
+      () => {
+        const captcha = document.querySelector("input[name='pc-success']");
+        return !captcha || captcha.checked || captcha.value === "1" || captcha.value === "true";
+      },
+      { timeout: 60000 }
+    )
+    .then(() => true)
+    .catch(() => false);
+
+  const captchaState = await page.locator("input[name='pc-success']").evaluate((captcha) => ({
+    checked: captcha.checked,
+    value: captcha.value,
+    required: captcha.required
+  })).catch(() => null);
+
+  if (!solved) {
+    log("Power-Captcha wurde nicht rechtzeitig abgeschlossen", { captchaState });
+    throw new Error("Power-Captcha nicht abgeschlossen, Standortauswahl wird im naechsten Lauf erneut versucht");
+  }
+
+  log("Power-Captcha abgeschlossen", { captchaState });
 }
 
 async function clickButtonInSection(page, sectionPattern, buttonPattern, description) {
