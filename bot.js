@@ -5,7 +5,7 @@ import { execSync } from "child_process";
 const PUSHOVER_USER = process.env.PUSHOVER_USER;
 const PUSHOVER_TOKEN = process.env.PUSHOVER_TOKEN;
 
-// 🔔 Push Funktion
+// 🔔 Push
 function sendPush(message) {
   return new Promise((resolve, reject) => {
     const data = new URLSearchParams({
@@ -49,23 +49,22 @@ async function ensureBrowserInstalled() {
   try {
     const browser = await chromium.launch();
     await browser.close();
-    console.log("Browser vorhanden ✅");
-  } catch (e) {
-    console.log("Browser fehlt → installiere...");
+  } catch {
     execSync("npx playwright install chromium", { stdio: "inherit" });
-    console.log("Browser installiert ✅");
   }
 }
 
-// 🔁 verhindert doppelte Pushes
+// 🔁 Zustand
 let lastState = null;
+let foundToday = false;
+let lastDay = new Date().getDate();
 
-// 🔍 Check Funktion (ohne Monatsfilter)
+// 🔍 Check
 async function check() {
-  console.log("Check startet:", new Date().toLocaleTimeString());
+  console.log("Check:", new Date().toLocaleTimeString());
 
   const browser = await chromium.launch({
-    args: ["--no-sandbox", "--disable-setuid-sandbox"]
+    args: ["--no-sandbox"]
   });
 
   const page = await browser.newPage();
@@ -77,18 +76,17 @@ async function check() {
 
     await page.waitForTimeout(3000);
 
-    // 👉 gesamter Seiteninhalt
     const content = await page.content();
 
-    // 👉 einfache Veränderungs-Erkennung
+    // 👉 wenn sich etwas ändert → möglicher Termin
     if (content !== lastState) {
-      console.log("Seite hat sich verändert");
+      console.log("Änderung erkannt");
 
-      await sendPush("🔄 LBV Seite hat sich geändert – evtl. neuer Termin!");
+      foundToday = true;
+
+      await sendPush("🔄 LBV Änderung erkannt – prüf manuell!");
 
       lastState = content;
-    } else {
-      console.log("Keine Änderung");
     }
 
   } catch (e) {
@@ -98,12 +96,36 @@ async function check() {
   await browser.close();
 }
 
-// 🚀 Start – exakt alle 10 Minuten
+// 📅 Tagesabschluss (z. B. 21:00 Uhr)
+async function dailyCheck() {
+  const now = new Date();
+
+  const currentDay = now.getDate();
+
+  // neuer Tag → reset
+  if (currentDay !== lastDay) {
+    foundToday = false;
+    lastDay = currentDay;
+  }
+
+  // 👉 21:00 Uhr Check
+  if (now.getHours() === 21 && now.getMinutes() === 0) {
+    if (!foundToday) {
+      await sendPush("😕 Heute wurde kein passender Termin gefunden.");
+    } else {
+      console.log("Heute gab es Treffer → keine Abschlussmeldung nötig");
+    }
+  }
+}
+
+// 🚀 Start
 async function run() {
   await ensureBrowserInstalled();
 
   while (true) {
     await check();
+    await dailyCheck();
+
     await new Promise(r => setTimeout(r, 10 * 60 * 1000)); // 10 Minuten
   }
 }
