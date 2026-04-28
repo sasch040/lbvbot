@@ -3,10 +3,10 @@ const { chromium } = require("playwright");
 const PUSHOVER_USER = process.env.PUSHOVER_USER;
 const PUSHOVER_TOKEN = process.env.PUSHOVER_TOKEN;
 
-// 👉 Ziel: alles vor diesem Datum ist gut
+// 👉 Zieltermin (hier anpassen)
 const TARGET_DATE = new Date("2026-05-15");
 
-// 👉 Debug: damit du SIEHST dass es funktioniert
+// 👉 Debug damit du sicher siehst dass es läuft
 const DEBUG_DATE = new Date("2026-06-30");
 
 async function sendPush(message) {
@@ -20,7 +20,7 @@ async function sendPush(message) {
         message
       })
     });
-    console.log("Push:", message);
+    console.log("Push gesendet:", message);
   } catch (e) {
     console.log("Push Fehler:", e.message);
   }
@@ -38,35 +38,47 @@ async function check() {
 
   try {
     await page.goto("https://lbv-termine.de/frontend/index.php", {
-      waitUntil: "domcontentloaded"
+      waitUntil: "domcontentloaded",
+      timeout: 60000
     });
 
-    // Cookie akzeptieren
+    // Cookie Banner
     await page.locator('button:has-text("Verstanden")').click().catch(() => {});
 
-    // Flow durchklicken
-    await page.click('text=Führerschein');
-    await page.click('text=Neuerteilung nach Entzug');
-    await page.click('text=weiter zur Terminvereinbarung');
+    // Warten bis UI geladen ist
+    await page.waitForTimeout(2000);
 
-    await page.check('input[type="checkbox"]');
-    await page.click('text=weiter');
+    // 👉 Führerschein (sichtbares Element sicher klicken)
+    await page.locator('text=Führerschein').first().click();
 
+    // 👉 Neuerteilung
+    await page.locator('text=Neuerteilung nach Entzug').first().click();
+
+    // 👉 Weiter
+    await page.locator('text=weiter zur Terminvereinbarung').click();
+
+    // 👉 Checkbox
+    await page.locator('input[type="checkbox"]').check();
+
+    // 👉 Weiter
+    await page.locator('text=weiter').click();
+
+    // 👉 Formular
     await page.fill('input[name="vorname"]', "Max");
     await page.fill('input[name="nachname"]', "Mustermann");
     await page.fill('input[name="email"]', "test@test.de");
 
-    await page.click('text=weiter zur Standortauswahl');
+    await page.locator('text=weiter zur Standortauswahl').click();
 
-    // Warten auf Terminanzeige
-    await page.waitForSelector("body");
+    // 👉 Warten bis Termine geladen sind
+    await page.waitForTimeout(5000);
 
     const text = await page.textContent("body");
 
     const match = text.match(/(\d{2}\.\d{2}\.\d{4})/);
 
     if (!match) {
-      console.log("Kein Datum gefunden");
+      console.log("❌ Kein Datum gefunden");
       await browser.close();
       return;
     }
@@ -74,20 +86,20 @@ async function check() {
     const [d, m, y] = match[1].split(".");
     const foundDate = new Date(`${y}-${m}-${d}`);
 
-    console.log("Gefunden:", match[1]);
+    console.log("Gefundenes Datum:", match[1]);
 
-    // 👉 DEBUG (zeigt dir dass Bot funktioniert)
+    // 👉 DEBUG Push (immer wenn etwas gefunden wird)
     if (foundDate <= DEBUG_DATE) {
       await sendPush(`🧪 DEBUG Termin: ${match[1]}`);
     }
 
-    // 👉 ECHTER TRIGGER
+    // 👉 Echter Trigger
     if (foundDate < TARGET_DATE) {
-      await sendPush(`🔥 Termin gefunden: ${match[1]}`);
+      await sendPush(`🔥 Termin verfügbar: ${match[1]}`);
     }
 
   } catch (e) {
-    console.log("Fehler:", e.message);
+    console.log("❌ Fehler:", e.message);
   }
 
   await browser.close();
@@ -97,6 +109,6 @@ async function check() {
 (async () => {
   while (true) {
     await check();
-    await new Promise(r => setTimeout(r, 600000)); // 10 min
+    await new Promise(r => setTimeout(r, 600000)); // 10 Minuten
   }
 })();
