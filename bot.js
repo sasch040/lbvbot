@@ -138,6 +138,8 @@ async function clickIfVisible(locator, description) {
 }
 
 async function clickButtonByName(page, namePattern, description) {
+  await closeInitialNotice(page);
+
   const candidates = [
     page.getByRole("button", { name: namePattern }),
     page.getByRole("link", { name: namePattern }),
@@ -251,6 +253,8 @@ async function waitForPowerCaptcha(page) {
 }
 
 async function clickButtonInSection(page, sectionPattern, buttonPattern, description) {
+  await closeInitialNotice(page);
+
   const labels = page.getByText(sectionPattern);
   const count = await labels.count();
 
@@ -295,6 +299,31 @@ async function clickButtonInSection(page, sectionPattern, buttonPattern, descrip
 }
 
 async function closeInitialNotice(page) {
+  const modal = page.locator("#frontendmodal, [role='dialog'][aria-modal='true']").first();
+
+  if (await modal.isVisible().catch(() => false)) {
+    const modalButtons = [
+      modal.getByRole("button", { name: /verstanden.*schlie/i }),
+      modal.getByRole("button", { name: /schlie/i }),
+      modal.locator("button.close, .close, [data-dismiss='modal']").first()
+    ];
+
+    for (const button of modalButtons) {
+      if (await clickIfVisible(button, "Hinweisfenster")) {
+        await page.waitForTimeout(1000);
+        return;
+      }
+    }
+
+    await page.keyboard.press("Escape").catch(() => {});
+    await page.waitForTimeout(1000);
+
+    if (!(await modal.isVisible().catch(() => false))) {
+      log("Hinweisfenster per Escape geschlossen");
+      return;
+    }
+  }
+
   const closePatterns = [
     /verstanden.*schlie/i,
     /akzeptier/i,
