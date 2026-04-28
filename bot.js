@@ -5,7 +5,7 @@ import { execSync } from "child_process";
 const PUSHOVER_USER = process.env.PUSHOVER_USER;
 const PUSHOVER_TOKEN = process.env.PUSHOVER_TOKEN;
 
-// 🔔 Push Funktion (100% korrekt)
+// 🔔 Push Funktion
 function sendPush(message) {
   return new Promise((resolve, reject) => {
     const data = new URLSearchParams({
@@ -57,7 +57,10 @@ async function ensureBrowserInstalled() {
   }
 }
 
-// 🔍 Termin Check
+// 🔁 verhindert doppelte Pushes
+let lastState = null;
+
+// 🔍 Check Funktion (ohne Monatsfilter)
 async function check() {
   console.log("Check startet:", new Date().toLocaleTimeString());
 
@@ -67,51 +70,42 @@ async function check() {
 
   const page = await browser.newPage();
 
-  await page.goto("https://www.hamburg.de/lbv/terminvereinbarung/", {
-    waitUntil: "networkidle"
-  });
+  try {
+    await page.goto("https://www.hamburg.de/lbv/terminvereinbarung/", {
+      waitUntil: "networkidle"
+    });
 
-  await page.waitForTimeout(3000);
+    await page.waitForTimeout(3000);
 
-  // 🔎 Alle Buttons prüfen
-  const buttons = await page.$$eval("button", els =>
-    els.map(el => el.innerText)
-  );
+    // 👉 gesamter Seiteninhalt
+    const content = await page.content();
 
-  const juniTermine = buttons.filter(text =>
-    text.toLowerCase().includes("juni")
-  );
+    // 👉 einfache Veränderungs-Erkennung
+    if (content !== lastState) {
+      console.log("Seite hat sich verändert");
 
-  if (juniTermine.length > 0) {
-    console.log("ECHTER Termin im Juni gefunden!", juniTermine);
+      await sendPush("🔄 LBV Seite hat sich geändert – evtl. neuer Termin!");
 
-    await sendPush(
-      "🚨 LBV Termin im Juni verfügbar!\n\n" +
-      juniTermine.join("\n")
-    );
-  } else {
-    console.log("Kein echter Termin im Juni gefunden");
+      lastState = content;
+    } else {
+      console.log("Keine Änderung");
+    }
+
+  } catch (e) {
+    console.log("Fehler:", e.message);
   }
 
   await browser.close();
 }
 
-// 🚀 Start
+// 🚀 Start – exakt alle 10 Minuten
 async function run() {
-  console.log("ENV CHECK:");
-  console.log("USER:", PUSHOVER_USER);
-  console.log("TOKEN:", PUSHOVER_TOKEN);
-
   await ensureBrowserInstalled();
 
-  // 🔔 TEST PUSH
-  await sendPush("✅ Bot gestartet und verbunden!");
-
-  // ⏱ alle 2 Minuten
-  setInterval(check, 2 * 60 * 1000);
-
-  // sofortiger Check
-  await check();
+  while (true) {
+    await check();
+    await new Promise(r => setTimeout(r, 10 * 60 * 1000)); // 10 Minuten
+  }
 }
 
 run();
