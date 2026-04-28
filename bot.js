@@ -145,15 +145,6 @@ async function clickButtonByName(page, namePattern, description) {
   throw new Error(`Button/Link nicht gefunden: ${description}`);
 }
 
-async function waitForText(page, pattern, description, timeout = 15000) {
-  await page.waitForFunction(
-    (source) => new RegExp(source, "i").test(document.body.innerText),
-    pattern.source,
-    { timeout }
-  );
-  log(description);
-}
-
 async function clickContinueToLocationSelection(page) {
   const candidates = [
     page.locator("input[type='submit'][value*='Standortauswahl']").first(),
@@ -163,16 +154,23 @@ async function clickContinueToLocationSelection(page) {
 
   for (const button of candidates) {
     if (await button.isVisible().catch(() => false)) {
+      const navigation = page.waitForURL(/standortauswahl\.php/i, { timeout: 30000 }).catch(() => null);
       await button.click();
       log("Weiter zur Standortauswahl geklickt");
+      const locationUrlReached = Boolean(await navigation);
       await page.waitForLoadState("domcontentloaded").catch(() => {});
       await page.waitForTimeout(3000);
-      await waitForText(
-        page,
-        /standortauswahl und fr\u00fchestm\u00f6glicher termin|termine verf\u00fcgbar ab/i,
-        "Standortauswahl mit Termintext sichtbar",
-        20000
-      );
+      const sample = await page
+        .locator("body")
+        .innerText({ timeout: 10000 })
+        .then((text) => text.slice(0, 700).replace(/\s+/g, " "))
+        .catch((error) => `Seitentext konnte nicht gelesen werden: ${error.message}`);
+
+      log("Nach Klick auf Weiter zur Standortauswahl", {
+        url: page.url(),
+        locationUrlReached,
+        sample
+      });
       return;
     }
   }
