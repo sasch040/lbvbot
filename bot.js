@@ -1,126 +1,100 @@
 const { chromium } = require("playwright");
-const axios = require("axios");
 
-// 🔐 ENV Variablen aus Railway
 const PUSHOVER_USER = process.env.PUSHOVER_USER;
 const PUSHOVER_TOKEN = process.env.PUSHOVER_TOKEN;
 
-// 🎯 Ziel
-const BEST_DATE = new Date("2026-04-30");
-const OK_DATE = new Date("2026-05-15");
+const TARGET_DATE = new Date("2026-05-15"); // alles davor ist gut
 
-// merkt sich letzten besseren Termin
-let lastNotified = null;
-
-// 📲 Push senden
-async function sendPush(title, message) {
+async function sendPush(message) {
   try {
-    await axios.post("https://api.pushover.net/1/messages.json", {
-      token: PUSHOVER_TOKEN,
-      user: PUSHOVER_USER,
-      title,
-      message,
-      priority: 1
+    await fetch("https://api.pushover.net/1/messages.json", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      body: new URLSearchParams({
+        token: PUSHOVER_TOKEN,
+        user: PUSHOVER_USER,
+        title: "LBV Termin",
+        message: message
+      })
     });
-    console.log("Push gesendet:", title);
-  } catch (err) {
-    console.error("Push Fehler:", err.message);
+    console.log("Push gesendet:", message);
+  } catch (e) {
+    console.log("Push Fehler:", e.message);
   }
 }
 
-// 🔍 Haupt-Check
 async function check() {
-  let browser;
+  console.log("Check startet:", new Date().toLocaleTimeString());
+
+  const browser = await chromium.launch({
+    headless: true,
+    args: ["--no-sandbox", "--disable-setuid-sandbox"]
+  });
+
+  const page = await browser.newPage();
 
   try {
-    browser = await chromium.launch({
-      headless: true,
-      args: [
-        "--no-sandbox",
-        "--disable-setuid-sandbox",
-        "--disable-dev-shm-usage",
-        "--disable-gpu"
-      ]
-    });
-
-    const context = await browser.newContext();
-    const page = await context.newPage();
-
     await page.goto("https://lbv-termine.de/frontend/index.php", {
-      waitUntil: "domcontentloaded"
+      waitUntil: "domcontentloaded",
+      timeout: 60000
     });
 
-    // Popup schließen
-    await page.locator('button:has-text("Verstanden")')
-      .click({ timeout: 3000 })
-      .catch(() => {});
+    // Datenschutz akzeptieren
+    await page.waitForSelector('input[type="checkbox"]', { timeout: 10000 });
+    await page.click('input[type="checkbox"]');
+    await page.click('text=weiter');
 
-    // Flow klicken
+    // Formular dummy ausfüllen
+    await page.fill('input[placeholder="Vorname"]', "Test");
+    await page.fill('input[placeholder="Nachname"]', "Test");
+    await page.fill('input[placeholder="E-Mail"]', "test@test.de");
+    await page.click('text=weiter zur Standortauswahl');
+
+    // Führerschein auswählen
     await page.click('text=Führerschein');
+    await page.waitForTimeout(1000);
+
     await page.click('text=Neuerteilung nach Entzug');
     await page.click('text=weiter zur Terminvereinbarung');
 
-    await page.check('input[type="checkbox"]');
-    await page.click('text=weiter');
+    await page.waitForTimeout(3000);
 
-    await page.fill('input[name="vorname"]', "Max");
-    await page.fill('input[name="nachname"]', "Mustermann");
-    await page.fill('input[name="email"]', "test@test.de");
+    const content = await page.content();
 
-    await page.click('text=weiter zur Standortauswahl');
+    // Datum extrahieren
+    const match = content.match(/(\d{2}\.\d{2}\.\d{4})/);
 
-    // Warten bis Datum sichtbar
-    await page.waitForSelector("text=Termine verfügbar ab", { timeout: 10000 });
+    if (match) {
+      const foundDateStr = match[1];
+      console.log("Gefunden:", foundDateStr);
 
-    const text = await page.textContent("body");
-    const match = text.match(/Termine verfügbar ab (\d{2}\.\d{2}\.\d{4})/);
+      const [day, month, year] = foundDateStr.split(".");
+      const foundDate = new Date(`${year}-${month}-${day}`);
 
-    if (!match) {
-      console.log("Kein Termintext gefunden");
-      return;
-    }
-
-    const [day, month, year] = match[1].split(".");
-    const foundDate = new Date(`${year}-${month}-${day}`);
-
-    console.log("Gefunden:", match[1]);
-
-    // ❌ Spam verhindern
-    if (lastNotified && foundDate >= lastNotified) {
-      console.log("Kein besserer Termin");
-      return;
-    }
-
-    // 🔥 TOP
-    if (foundDate <= BEST_DATE) {
-      await sendPush(
-        "🔥 TOP TERMIN!",
-        `📅 ${match[1]}\nJETZT BUCHEN:\nhttps://lbv-termine.de`
-      );
-      lastNotified = foundDate;
-    }
-    // ⚡ OK
-    else if (foundDate <= OK_DATE) {
-      await sendPush(
-        "⚡ Früher Termin verfügbar",
-        `📅 ${match[1]}\nhttps://lbv-termine.de`
-      );
-      lastNotified = foundDate;
+      if (foundDate < TARGET_DATE) {
+        await sendPush(`🔥 Früher Termin gefunden: ${foundDateStr}`);
+      }
     } else {
-      console.log("Noch zu spät");
+      console.log("Kein Datum gefunden");
     }
 
   } catch (err) {
-    console.error("Fehler im Check:", err.message);
-  } finally {
-    if (browser) {
-      await browser.close();
-    }
+    console.log("Fehler beim Check:", err.message);
+  }
+
+  await browser.close();
+}
+
+// 🔁 Endlosschleife
+async function run() {
+  while (true) {
+    await check();
+
+    console.log("Warte 10 Minuten...");
+    await new Promise(r => setTimeout(r, 10 * 60 * 1000));
   }
 }
 
-// 🔁 Alle 10 Minuten
-setInterval(check, 10 * 60 * 1000);
-
-// ▶️ Direkt beim Start
-check();
+run();
