@@ -28,17 +28,13 @@ function sendPush(message) {
         let body = "";
         res.on("data", (chunk) => (body += chunk));
         res.on("end", () => {
-          console.log("PUSH RESPONSE:", body);
+          console.log("PUSH:", body);
           resolve(body);
         });
       }
     );
 
-    req.on("error", (err) => {
-      console.error("PUSH ERROR:", err);
-      reject(err);
-    });
-
+    req.on("error", reject);
     req.write(data);
     req.end();
   });
@@ -54,8 +50,18 @@ async function ensureBrowserInstalled() {
   }
 }
 
+// 📅 Datum-Helper
+function parseDate(str) {
+  const [d, m, y] = str.split(".");
+  return new Date(`${y}-${m}-${d}`);
+}
+
+// 🎯 Zielbereich
+const FROM = new Date("2026-04-28");
+const TO = new Date("2026-05-25");
+
 // 🔁 Zustand
-let lastState = null;
+let lastFoundDate = null;
 let foundToday = false;
 let lastDay = new Date().getDate();
 
@@ -76,17 +82,32 @@ async function check() {
 
     await page.waitForTimeout(3000);
 
-    const content = await page.content();
+    const html = await page.content();
 
-    // 👉 wenn sich etwas ändert → möglicher Termin
-    if (content !== lastState) {
-      console.log("Änderung erkannt");
+    const match = html.match(/Termin verfügbar ab\s*(\d{2}\.\d{2}\.\d{4})/);
 
-      foundToday = true;
+    if (match) {
+      const datumStr = match[1];
+      const datum = parseDate(datumStr);
 
-      await sendPush("🔄 LBV Änderung erkannt – prüf manuell!");
+      console.log("Gefunden:", datumStr);
 
-      lastState = content;
+      // 👉 nur wenn im gewünschten Bereich
+      if (datum >= FROM && datum <= TO) {
+        foundToday = true;
+
+        if (datumStr !== lastFoundDate) {
+          await sendPush(`🚨 Termin verfügbar am ${datumStr}`);
+          lastFoundDate = datumStr;
+        } else {
+          console.log("Schon gemeldet");
+        }
+      } else {
+        console.log("Termin außerhalb Bereich");
+      }
+
+    } else {
+      console.log("Kein Termin gefunden");
     }
 
   } catch (e) {
@@ -96,7 +117,7 @@ async function check() {
   await browser.close();
 }
 
-// 📅 Tagesabschluss (z. B. 21:00 Uhr)
+// 📅 Tagesabschluss (21:00)
 async function dailyCheck() {
   const now = new Date();
 
@@ -108,12 +129,11 @@ async function dailyCheck() {
     lastDay = currentDay;
   }
 
-  // 👉 21:00 Uhr Check
-  if (now.getHours() === 21 && now.getMinutes() === 0) {
+  // 👉 21:00 Uhr
+  if (now.getHours() === 21 && now.getMinutes() < 10) {
     if (!foundToday) {
-      await sendPush("😕 Heute wurde kein passender Termin gefunden.");
-    } else {
-      console.log("Heute gab es Treffer → keine Abschlussmeldung nötig");
+      await sendPush("😕 Heute kein passender Termin gefunden");
+      foundToday = true; // verhindert doppelte Meldung
     }
   }
 }
