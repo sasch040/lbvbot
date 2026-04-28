@@ -2,8 +2,8 @@ process.env.PLAYWRIGHT_BROWSERS_PATH = process.env.PLAYWRIGHT_BROWSERS_PATH || "
 
 const { chromium } = require("playwright");
 
-const URL = "https://www.hamburg.de/lbv/terminvereinbarung/";
-const CHECK_INTERVAL_MINUTES = Number(process.env.CHECK_INTERVAL_MINUTES || 30);
+const URL = process.env.LBV_URL || "https://www.lbv-termine.de/frontend/index.php?behoerdenID=56";
+const CHECK_INTERVAL_MINUTES = Number(process.env.CHECK_INTERVAL_MINUTES || 10);
 const NO_MATCH_NOTIFY_HOUR = Number(process.env.NO_MATCH_NOTIFY_HOUR || 20);
 const FROM = parseDate(process.env.FROM_DATE || "28.04.2026");
 const TO = parseDate(process.env.TO_DATE || "25.05.2026");
