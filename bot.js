@@ -146,6 +146,32 @@ async function clickButtonByName(page, namePattern, description) {
 }
 
 async function clickContinueToLocationSelection(page) {
+  const formState = await page.evaluate(() => ({
+    url: window.location.href,
+    inputs: [...document.querySelectorAll("input")].map((input) => ({
+      id: input.id,
+      name: input.name,
+      type: input.type,
+      value: input.type === "password" ? "" : input.value,
+      checked: input.checked,
+      required: input.required,
+      visible: Boolean(input.offsetParent)
+    })).filter((input) =>
+      input.required ||
+      ["vorname", "nachname", "email"].includes(input.name) ||
+      ["vorname", "nachname", "email"].includes(input.id)
+    ),
+    buttons: [...document.querySelectorAll("input[type='submit'], button")].map((button) => ({
+      tag: button.tagName,
+      type: button.type,
+      value: button.value || button.innerText || "",
+      disabled: button.disabled,
+      visible: Boolean(button.offsetParent)
+    }))
+  }));
+
+  log("Kontaktdaten-Seite vor Standortauswahl-Submit", formState);
+
   const clicked = await page.evaluate(() => {
     const buttons = [...document.querySelectorAll("input[type='submit'], button")];
     const button = buttons.find((item) => {
