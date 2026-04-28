@@ -6,6 +6,6 @@
     "start": "node bot.js"
   },
   "dependencies": {
-    "playwright-core": "1.59.1"
+    "playwright": "1.59.1"
   }
 }
