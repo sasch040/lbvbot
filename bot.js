@@ -146,36 +146,56 @@ async function clickButtonByName(page, namePattern, description) {
 }
 
 async function clickContinueToLocationSelection(page) {
-  const candidates = [
-    page.locator("input[type='submit'][value*='Standortauswahl']").first(),
-    page.getByRole("button", { name: /weiter zur standortauswahl/i }).first(),
-    page.locator("button").filter({ hasText: /weiter zur standortauswahl/i }).first()
-  ];
+  const clicked = await page.evaluate(() => {
+    const buttons = [...document.querySelectorAll("input[type='submit'], button")];
+    const button = buttons.find((item) => {
+      const label = item.value || item.innerText || "";
+      return /weiter zur standortauswahl/i.test(label);
+    });
 
-  for (const button of candidates) {
-    if (await button.isVisible().catch(() => false)) {
-      const navigation = page.waitForURL(/standortauswahl\.php/i, { timeout: 30000 }).catch(() => null);
-      await button.click();
-      log("Weiter zur Standortauswahl geklickt");
-      const locationUrlReached = Boolean(await navigation);
-      await page.waitForLoadState("domcontentloaded").catch(() => {});
-      await page.waitForTimeout(3000);
-      const sample = await page
-        .locator("body")
-        .innerText({ timeout: 10000 })
-        .then((text) => text.slice(0, 700).replace(/\s+/g, " "))
-        .catch((error) => `Seitentext konnte nicht gelesen werden: ${error.message}`);
-
-      log("Nach Klick auf Weiter zur Standortauswahl", {
-        url: page.url(),
-        locationUrlReached,
-        sample
-      });
-      return;
+    if (!button) {
+      return false;
     }
+
+    button.scrollIntoView({ block: "center" });
+
+    if (button.form && typeof button.form.requestSubmit === "function") {
+      button.form.requestSubmit(button);
+    } else {
+      button.click();
+    }
+
+    return true;
+  });
+
+  if (!clicked) {
+    throw new Error("Button nicht gefunden: Weiter zur Standortauswahl");
   }
 
-  throw new Error("Button nicht gefunden: Weiter zur Standortauswahl");
+  log("Weiter zur Standortauswahl geklickt");
+
+  await page
+    .waitForFunction(
+      () =>
+        window.location.href.includes("standortauswahl.php") ||
+        /termine verf\u00fcgbar ab|standortauswahl und fr\u00fchestm\u00f6glicher termin/i.test(document.body.innerText),
+      { timeout: 10000 }
+    )
+    .catch(() => {});
+
+  await page.waitForTimeout(2000);
+
+  const sample = await page
+    .locator("body")
+    .innerText({ timeout: 10000 })
+    .then((text) => text.slice(0, 1000).replace(/\s+/g, " "))
+    .catch((error) => `Seitentext konnte nicht gelesen werden: ${error.message}`);
+
+  log("Nach Klick auf Weiter zur Standortauswahl", {
+    url: page.url(),
+    aufStandortseite: page.url().includes("standortauswahl.php"),
+    sample
+  });
 }
 
 async function clickButtonInSection(page, sectionPattern, buttonPattern, description) {
