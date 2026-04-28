@@ -4,7 +4,7 @@
   "main": "bot.js",
   "scripts": {
     "start": "node bot.js",
-    "postinstall": "npx playwright install"
+    "postinstall": "npx playwright install --with-deps chromium"
   },
   "dependencies": {
     "playwright": "1.59.1"
