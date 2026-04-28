@@ -1,50 +1,63 @@
 import { chromium } from "playwright";
 import https from "https";
+import { execSync } from "child_process";
 
 const PUSHOVER_USER = process.env.PUSHOVER_USER;
 const PUSHOVER_TOKEN = process.env.PUSHOVER_TOKEN;
 
-async function sendPush(message) {
-  const data = JSON.stringify({
-    token: PUSHOVER_TOKEN,
-    user: PUSHOVER_USER,
-    message
-  });
+// 🔔 Push Funktion (100% korrekt)
+function sendPush(message) {
+  return new Promise((resolve, reject) => {
+    const data = new URLSearchParams({
+      token: PUSHOVER_TOKEN,
+      user: PUSHOVER_USER,
+      message
+    }).toString();
 
-  const req = https.request(
-    {
-      hostname: "api.pushover.net",
-      path: "/1/messages.json",
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Content-Length": data.length
+    const req = https.request(
+      {
+        hostname: "api.pushover.net",
+        path: "/1/messages.json",
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "Content-Length": Buffer.byteLength(data)
+        }
+      },
+      (res) => {
+        let body = "";
+        res.on("data", (chunk) => (body += chunk));
+        res.on("end", () => {
+          console.log("PUSH RESPONSE:", body);
+          resolve(body);
+        });
       }
-    },
-    (res) => {
-      res.on("data", () => {});
-    }
-  );
+    );
 
-  req.write(data);
-  req.end();
+    req.on("error", (err) => {
+      console.error("PUSH ERROR:", err);
+      reject(err);
+    });
+
+    req.write(data);
+    req.end();
+  });
 }
 
+// 🔧 Browser sicherstellen
 async function ensureBrowserInstalled() {
   try {
     const browser = await chromium.launch();
     await browser.close();
     console.log("Browser vorhanden ✅");
   } catch (e) {
-    console.log("Browser fehlt → installiere jetzt...");
-
-    const { execSync } = await import("child_process");
+    console.log("Browser fehlt → installiere...");
     execSync("npx playwright install chromium", { stdio: "inherit" });
-
     console.log("Browser installiert ✅");
   }
 }
 
+// 🔍 Termin Check
 async function check() {
   console.log("Check startet:", new Date().toLocaleTimeString());
 
@@ -58,27 +71,46 @@ async function check() {
     waitUntil: "networkidle"
   });
 
-  // WICHTIG: stabiler selector
   await page.waitForTimeout(3000);
 
-  const content = await page.content();
+  // 🔎 Alle Buttons prüfen
+  const buttons = await page.$$eval("button", els =>
+    els.map(el => el.innerText)
+  );
 
-  if (content.includes("Juni")) {
-    console.log("Termin im Juni gefunden!");
-    await sendPush("🚨 Termin im Juni verfügbar!");
+  const juniTermine = buttons.filter(text =>
+    text.toLowerCase().includes("juni")
+  );
+
+  if (juniTermine.length > 0) {
+    console.log("ECHTER Termin im Juni gefunden!", juniTermine);
+
+    await sendPush(
+      "🚨 LBV Termin im Juni verfügbar!\n\n" +
+      juniTermine.join("\n")
+    );
   } else {
-    console.log("Kein Termin im Juni gefunden");
+    console.log("Kein echter Termin im Juni gefunden");
   }
 
   await browser.close();
 }
 
+// 🚀 Start
 async function run() {
+  console.log("ENV CHECK:");
+  console.log("USER:", PUSHOVER_USER);
+  console.log("TOKEN:", PUSHOVER_TOKEN);
+
   await ensureBrowserInstalled();
 
-  // läuft alle 2 Minuten
+  // 🔔 TEST PUSH
+  await sendPush("✅ Bot gestartet und verbunden!");
+
+  // ⏱ alle 2 Minuten
   setInterval(check, 2 * 60 * 1000);
 
+  // sofortiger Check
   await check();
 }
 
